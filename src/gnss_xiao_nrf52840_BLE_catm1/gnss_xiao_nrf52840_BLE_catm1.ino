@@ -70,9 +70,7 @@ double longitude;
 long altitude;
 
 // acceleration data
-float x;
-float y;
-float z;
+String status = "";
 
 unsigned long data_number = 0;//データのシーケンシャルナンバー
 String filename;//SDカードに書き込みをする際のファイル名,setup()関数でファイル名を初期化する
@@ -122,9 +120,7 @@ void getImuTask(void *pvParameters) {//IMUの値を取得するタスク
       doc["lat"] = latitude;
       doc["lon"] = longitude;
       doc["alt"] = altitude;
-      doc["ax"] = x;
-      doc["ay"] = y;
-      doc["az"] = z;
+      doc["status"] = status;
       char send_data[100];
       serializeJson(doc, send_data);
       xQueueSend(queue1, send_data, (TickType_t)0);
@@ -245,11 +241,10 @@ static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, ui
   // Serial.print(" of data length ");
   // Serial.println(length);
 
-  float *accelData = (float *)pData;
-  x = accelData[0];
-  y = accelData[0];
-  z = accelData[0];
-  Serial.printf("Acceleration - X: %f, Y: %f, Z: %f\n", accelData[0], accelData[1], accelData[2]);
+  // pDataを文字列として扱う
+  std::string receivedData(reinterpret_cast<char*>(pData), length);
+  status = receivedData.c_str();
+  Serial.printf("status - %s\n", receivedData.c_str());
 }
 
 //MyClientCallbackクラスは、BLEクライアントがサーバーに対して行う接続・切断操作に応じた処理を実装するコールバッククラスです。
@@ -298,10 +293,9 @@ bool connectToServer() {
 
   // 初期値を読み取る
   if (pRemoteCharacteristic->canRead()) {//キャラクタリスティックが読み取り可能かどうかを確認します。
-    std::string value = pRemoteCharacteristic->readValue().c_str();//readValue(): キャラクタリスティックの値を読み取ります。
+    String value = pRemoteCharacteristic->readValue();//readValue(): キャラクタリスティックの値を読み取ります。
 
-    float *accelData = (float *)value.data();
-    Serial.printf("Initial Acceleration - X: %f, Y: %f, Z: %f\n", accelData[0], accelData[1], accelData[2]);
+    Serial.printf("Initial status - %s\n", value);
   }
 
   // 通知を登録
@@ -616,7 +610,7 @@ void createFilename(uint16_t year, uint8_t month, uint8_t day, uint8_t hourUTC, 
             }
         }
     }
-    char date[32]; // ファイル名バッファ
+    char date[32]; // ファイル名バッファ 
     // ファイル名を生成
     snprintf(date, sizeof(date), "%04u-%02u-%02u-%02u-%02u-%02u.csv", year, month, day, hourJST, minute, second);
     filename = date; // ファイル名のポインタを設定
