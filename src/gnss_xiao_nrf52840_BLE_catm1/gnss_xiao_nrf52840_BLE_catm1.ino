@@ -33,7 +33,7 @@ HardwareSerial mySerial(0);
 
 /*IMU*/
 #include <Wire.h>
-#define SAMPLE_RATE 50//IMUのサンプリングレート
+#define SAMPLE_RATE 10//IMUのサンプリングレート
 
 /*SD*/
 #include <SPI.h>
@@ -100,32 +100,11 @@ void getImuTask(void *pvParameters) {//IMUの値を取得するタスク
 
     if (connected) {
       // サーバーと接続している間、必要な処理を記述
-      // キャラクタリスティックから値を読み取る
-      // std::string value = pRemoteCharacteristic->readValue().c_str();
-      // if (value.size() >= 12) {
-      //   const float *accelData = reinterpret_cast<const float *>(value.data());
-      //   // Serial.printf("Acceleration - X: %.2f, Y: %.2f, Z: %.2f\n",accelData[0], accelData[1], accelData[2]);
-      //   x = accelData[0];
-      //   y = accelData[0];
-      //   z = accelData[0];
-      // } else {
-      //   Serial.println("Error: Unexpected data length.");
-      // }
+      
     } else if (doScan) {
       BLEDevice::getScan()->start(0);  // 再スキャン
     }
 
-    if(data_number % 3 == 0){
-      StaticJsonDocument<96> doc;
-      doc["lat"] = latitude;
-      doc["lon"] = longitude;
-      doc["alt"] = altitude;
-      doc["status"] = status;
-      char send_data[100];
-      serializeJson(doc, send_data);
-      xQueueSend(queue1, send_data, (TickType_t)0);
-    }
-    
     vTaskDelay(1000);
     // vTaskDelayUntil(&xLastWakeTime, xFrequency);//センサの値を周期的に読み取るためvTaskDelayUntil関数を使用,xFrequency秒(50ms)ごとにwhileループが回る
   }
@@ -244,6 +223,19 @@ static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, ui
   // pDataを文字列として扱う
   std::string receivedData(reinterpret_cast<char*>(pData), length);
   status = receivedData.c_str();
+
+  StaticJsonDocument<96> doc;
+  doc["lat"] = latitude;
+  doc["lon"] = longitude;
+  doc["alt"] = altitude;
+  doc["status"] = status;
+  char send_data[100];
+  serializeJson(doc, send_data);
+  xQueueSend(queue1, send_data, (TickType_t)0);
+  xQueueSend(queue2, send_data, (TickType_t)0);
+  if(uxQueueMessagesWaiting(queue2) >= SAMPLE_RATE){
+    logged = true;
+  }
   Serial.printf("status - %s\n", receivedData.c_str());
 }
 
@@ -550,15 +542,15 @@ void setup() {
     NULL,
     1//core0でタスクを処理する
   );
-  // xTaskCreateUniversal(//データをCAT-Mで送信するタスクを生成
-  //   writeSDTask,
-  //   "writeSDTask",
-  //   4096,
-  //   NULL,
-  //   0,//優先度1
-  //   NULL,
-  //   0//core0でタスクを処理する
-  // );
+  xTaskCreateUniversal(//データをCAT-Mで送信するタスクを生成
+    writeSDTask,
+    "writeSDTask",
+    4096,
+    NULL,
+    0,//優先度1
+    NULL,
+    0//core0でタスクを処理する
+  );
 
   delay(100);
 }
@@ -577,7 +569,8 @@ void writeDataToSD()//SDカードに書き込みを行う関数
     for (int i = 0; i < count; i++)
     {
       xQueueReceive(queue2, buf, pdMS_TO_TICKS(0));
-      dataFile.println(buf);
+      dataFile.print(buf);
+      dataFile.println(",");
     }
     dataFile.close(); // ファイルを閉じる
     Serial.println("Data written to SD card.");
