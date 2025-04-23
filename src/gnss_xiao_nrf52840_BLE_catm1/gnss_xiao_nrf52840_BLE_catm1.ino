@@ -7,8 +7,8 @@ GNSS NEO-F10Nから500ms周期で緯度,経度,高度を取得する
 
 /*queue*/
 #define MAX_QUE1_NUM 10//queue1のサイズ
-#define MAX_QUE1_SIZE 100//queue1の各キューの大きさ(byte)
-#define MAX_QUE2_NUM 75//queue2のキューのサイズ
+#define MAX_QUE1_SIZE 90//queue1の各キューの大きさ(byte)
+#define MAX_QUE2_NUM 50//queue2のキューのサイズ
 #define MAX_QUE2_SIZE 90//queue2の各キューの大きさ(byte)
 QueueHandle_t queue1;
 QueueHandle_t queue2;
@@ -108,7 +108,7 @@ void getRoadSurfaceCharacteristicsTask(void *pvParameters) {//BLE通信を行い
     }
 
     vTaskDelay(1000);
-    // vTaskDelayUntil(&xLastWakeTime, xFrequency);//センサの値を周期的に読み取るためvTaskDelayUntil関数を使用,xFrequency秒(50ms)ごとにwhileループが回る
+    // vTaskDelayUntil(&xLastWakeTime, xFrequency);//センサの値を周期的に読み取るためvTaskDelayUntil関数を使用,xFrequency秒(1000ms)ごとにwhileループが回る
   }
 }
 
@@ -490,15 +490,17 @@ void setup() {
     Serial.println("Error: AT+CASSLCFG?");
   }
 
-  if (!sendATCommand("AT+CAOPEN=0,0,\"UDP\",\"harvest.soracom.io\",8514\r\n")) {
+  if (!sendATCommand("AT+CAOPEN=0,0,\"UDP\",\"funnel.soracom.io\",23080\r\n")) {
     Serial.println("Error: AT+CAOPEN");
   }
 
   BLEDevice::init("");//BLEデバイスを初期化
   BLEScan *pBLEScan = BLEDevice::getScan();//BLEスキャンを管理するBLEScanオブジェクトを取得
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());//スキャン中に見つかったアドバタイズされたデバイスを処理するためのコールバック関数を設定
-  pBLEScan->setInterval(1349);//スキャン間隔
-  pBLEScan->setWindow(449);//ウィンドウ値
+  // pBLEScan->setInterval(1349);//スキャン間隔
+  // pBLEScan->setWindow(449);//ウィンドウ値
+  pBLEScan->setInterval(500);//スキャン間隔
+  pBLEScan->setWindow(300);//ウィンドウ値
   pBLEScan->setActiveScan(true);//アクティブスキャンを有効にする。アクティブスキャンは、デバイスにSCAN_REQを送信して、アドバタイジング・パケットに収まりきらなかった情報をさらに取得します
   pBLEScan->start(5, false);
 
@@ -513,14 +515,14 @@ void setup() {
     NULL,//起動パラメータ
     2,//優先度2(数字が大きい程優先度が高い)
     NULL,//タスクハンドルのポインタ
-    0//core1でタスクを処理する
+    0//core0でタスクを処理する
   );
   xTaskCreateUniversal(//ここでgnssの値の取得をするタスクを生成
     getGnssTask,
     "getGnssTask",
     8192,
     NULL,
-    2,//優先度3で行う
+    2,//優先度2で行う
     NULL,
     1//core1でタスクを処理する
   );
@@ -531,14 +533,14 @@ void setup() {
     NULL,
     1,//優先度1
     NULL,
-    1//core0でタスクを処理する
+    1//core1でタスクを処理する
   );
   xTaskCreateUniversal(//データをSDカードに記録するタスクを生成
     writeSDTask,
     "writeSDTask",
     4096,
     NULL,
-    0,//優先度1
+    0,//優先度0
     NULL,
     0//core0でタスクを処理する
   );
@@ -599,7 +601,7 @@ void createFilename(uint16_t year, uint8_t month, uint8_t day, uint8_t hourUTC, 
     snprintf(date, sizeof(date), "%04u-%02u-%02u-%02u-%02u-%02u.csv", year, month, day, hourJST, minute, second);
     filename = date; // ファイル名のポインタを設定
 
-    pcf.init();
+    pcf.init();//rtcに時刻を設定
     pcf.stopClock();
     pcf.setYear(year % 100);
     pcf.setMonth(month);
