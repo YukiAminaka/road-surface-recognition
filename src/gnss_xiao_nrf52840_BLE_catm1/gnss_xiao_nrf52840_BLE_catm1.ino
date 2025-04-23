@@ -1,16 +1,18 @@
 /*
-GNSS NEO-F10Nから緯度,経度,高度をBNO086から加速度を取得する
-500ms周期でGNSSの値を取得する
-50ms周期でIMUの値を取得する
-処理はマルチタスクで行い,core1で3軸の値とGNSSの値を取得し
-データが50個たまったらcore0のタスクでSDに書きこみとcat-M1でデータの送信を行う
+GNSS NEO-F10Nから500ms周期で緯度,経度,高度を取得する
+1000ms周期でBLE通信しているXIAO nRF52840 senseの走行状態および路面特性の推論値を取得する
+データが10個たまったらSDに書きこみ
+およそ2秒に一回cat-M1でデータの送信を行う
 */
 
 /*queue*/
-#define MAX_QUE_NUM 10//キューのサイズ
-#define MAX_QUE_SIZE 100//各キューの大きさ(バイト)
+#define MAX_QUE1_NUM 10//queue1のサイズ
+#define MAX_QUE1_SIZE 90//queue1の各キューの大きさ(byte)
+#define MAX_QUE2_NUM 50//queue2のキューのサイズ
+#define MAX_QUE2_SIZE 90//queue2の各キューの大きさ(byte)
 QueueHandle_t queue1;
 QueueHandle_t queue2;
+
 /*display*/
 #include <U8x8lib.h>
 U8X8_SSD1306_128X64_NONAME_HW_I2C u8x8(/* clock=*/ SCL, /* data=*/ SDA, /* reset=*/ U8X8_PIN_NONE);   // OLEDs without Reset of the Display
@@ -85,8 +87,8 @@ JsonArray ac;
 bool logged = false;
 
 
-void getImuTask(void *pvParameters) {//IMUの値を取得するタスク
-  const TickType_t xFrequency = 1000 / portTICK_PERIOD_MS;  // 50ミリ秒の周期で3軸の値を更新
+void getRoadSurfaceCharacteristicsTask(void *pvParameters) {//BLE通信を行い走行状態および路面特性のキャラクタリスティックを取得するタスク
+  const TickType_t xFrequency = 1000 / portTICK_PERIOD_MS;
   TickType_t xLastWakeTime = xTaskGetTickCount();         // 最後に実行された時間を取得
   while (1) {
     if (doConnect) {
@@ -106,12 +108,12 @@ void getImuTask(void *pvParameters) {//IMUの値を取得するタスク
     }
 
     vTaskDelay(1000);
-    // vTaskDelayUntil(&xLastWakeTime, xFrequency);//センサの値を周期的に読み取るためvTaskDelayUntil関数を使用,xFrequency秒(50ms)ごとにwhileループが回る
+    // vTaskDelayUntil(&xLastWakeTime, xFrequency);//センサの値を周期的に読み取るためvTaskDelayUntil関数を使用,xFrequency秒(1000ms)ごとにwhileループが回る
   }
 }
 
-void getGnssAndWriteLogTask(void *pvParameters) {//GNSSの値を取得してSDカードに書き込みを行うタスク
-  const TickType_t xFrequency = 500 / portTICK_PERIOD_MS;  // 500ミリ秒の周期で位置情報を更新してSDカードにデータを書き込み
+void getGnssTask(void *pvParameters) {//GNSSの値を取得を行うタスク
+  const TickType_t xFrequency = 500 / portTICK_PERIOD_MS;  // 500ミリ秒の周期で位置情報を更新
   TickType_t xLastWakeTime = xTaskGetTickCount();         // 最後に実行された時間を取得
   while (1) {
 
@@ -120,6 +122,13 @@ void getGnssAndWriteLogTask(void *pvParameters) {//GNSSの値を取得してSD�
     altitude = myGNSS.getAltitude();//高度
     
     //xiaoの拡張ボードに今日の日付と時刻を表示する
+    Time nowTime = pcf.getTime();//RTCモジュールから現在の時刻を取得。nowTimeオブジェクトに時刻情報が格納される。
+    year = nowTime.year;     
+    month = nowTime.month;   
+    day = nowTime.day;      
+    hour = nowTime.hour;     
+    minute = nowTime.minute;  
+    second = nowTime.second;
     u8x8.setFont(u8x8_font_chroma48medium8_r);   // choose a suitable font
     u8x8.setCursor(0, 0);
     u8x8.print(day);
@@ -136,7 +145,6 @@ void getGnssAndWriteLogTask(void *pvParameters) {//GNSSの値を取得してSD�
     u8x8.println(second);
 
     
-    // vTaskDelayUntil(&xLastWakeTime, xFrequency);//センサの値を周期的に読み取るためvTaskDelayUntil関数を使用,xFrequency秒(500ms)ごとにwhileループが回る
     vTaskDelay(1);
   }
 }
@@ -184,7 +192,6 @@ bool sendATCommand(const char* command ,int delay_time = 500) {
 
 
 void serial_send(String data) {
-  // Serial.printf("Q%d\n", uxQueueMessagesWaiting(queue));
   char command[100];
   sprintf(command,"AT+CASEND=0,%d\r\n",data.length());
   if (!sendATCommand(command)){
@@ -215,11 +222,6 @@ void writeSDTask(void *pvParameters){
 
 
 static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, uint8_t *pData, size_t length, bool isNotify) {
-  // Serial.print("Notify callback for characteristic ");
-  // Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-  // Serial.print(" of data length ");
-  // Serial.println(length);
-
   // pDataを文字列として扱う
   std::string receivedData(reinterpret_cast<char*>(pData), length);
   status = receivedData.c_str();
@@ -377,14 +379,6 @@ void setup() {
 
   Wire.begin();
 
-  BLEDevice::init("");//BLEデバイスを初期化
-  BLEScan *pBLEScan = BLEDevice::getScan();//BLEスキャンを管理するBLEScanオブジェクトを取得
-  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());//スキャン中に見つかったアドバタイズされたデバイスを処理するためのコールバック関数を設定
-  pBLEScan->setInterval(1349);//スキャン間隔
-  pBLEScan->setWindow(449);//ウィンドウ値
-  pBLEScan->setActiveScan(true);//アクティブスキャンを有効にする。アクティブスキャンは、デバイスにSCAN_REQを送信して、アドバタイジング・パケットに収まりきらなかった情報をさらに取得します
-  pBLEScan->start(5, false);
-
 
   if (!SD.begin(SD_CS_PIN))
   {
@@ -408,19 +402,8 @@ void setup() {
   uint8_t hour = myGNSS.getHour();
   uint8_t minute = myGNSS.getMinute();
   uint8_t second = myGNSS.getSecond();
-  // sprintf(date,"%04u-%02u-%02u-%02u-%02u-%02u.csv",year,month,day,hour,minute,second);//SDカードに作成するファイル名を生成
-  // filename = date;
+  
   createFilename(year, month, day, hour, minute, second);
-
-  // pcf.init();
-  // pcf.stopClock();
-  // pcf.setYear(year % 100);
-  // pcf.setMonth(month);
-  // pcf.setDay(day);
-  // pcf.setHour(hour);
-  // pcf.setMinut(minute);
-  // pcf.setSecond(second);
-  // pcf.startClock();
 
   u8x8.begin();//OLEDディスプレイの初期化
   u8x8.setFlipMode(1);//ディスプレイの上下を反転
@@ -507,29 +490,39 @@ void setup() {
     Serial.println("Error: AT+CASSLCFG?");
   }
 
-  if (!sendATCommand("AT+CAOPEN=0,0,\"UDP\",\"harvest.soracom.io\",8514\r\n")) {
+  if (!sendATCommand("AT+CAOPEN=0,0,\"UDP\",\"funnel.soracom.io\",23080\r\n")) {
     Serial.println("Error: AT+CAOPEN");
   }
 
-  //キューを作成
-  queue1 = xQueueCreate(MAX_QUE_NUM, MAX_QUE_SIZE);
-  queue2 = xQueueCreate(75, 90);
+  BLEDevice::init("");//BLEデバイスを初期化
+  BLEScan *pBLEScan = BLEDevice::getScan();//BLEスキャンを管理するBLEScanオブジェクトを取得
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());//スキャン中に見つかったアドバタイズされたデバイスを処理するためのコールバック関数を設定
+  // pBLEScan->setInterval(1349);//スキャン間隔
+  // pBLEScan->setWindow(449);//ウィンドウ値
+  pBLEScan->setInterval(500);//スキャン間隔
+  pBLEScan->setWindow(300);//ウィンドウ値
+  pBLEScan->setActiveScan(true);//アクティブスキャンを有効にする。アクティブスキャンは、デバイスにSCAN_REQを送信して、アドバタイジング・パケットに収まりきらなかった情報をさらに取得します
+  pBLEScan->start(5, false);
 
-  xTaskCreateUniversal(//ここでIMUの値を取得するタスクを生成
-    getImuTask,//作成するタスク関数
-    "getImuTask",//タスク名
+  //キューを作成
+  queue1 = xQueueCreate(MAX_QUE1_NUM, MAX_QUE1_SIZE);
+  queue2 = xQueueCreate(MAX_QUE2_NUM, MAX_QUE2_SIZE);
+
+  xTaskCreateUniversal(//ここでBLE通信で値を取得するタスクを生成
+    getRoadSurfaceCharacteristicsTask,//作成するタスク関数
+    "getRoadSurfaceCharacteristicsTask",//タスク名
     8192,//スタックメモリサイズ(4096or8192)
     NULL,//起動パラメータ
     2,//優先度2(数字が大きい程優先度が高い)
     NULL,//タスクハンドルのポインタ
-    0//core1でタスクを処理する
+    0//core0でタスクを処理する
   );
-  xTaskCreateUniversal(//ここでgnssの値の取得とSDカードに書き込みをするタスクを生成
-    getGnssAndWriteLogTask,
-    "getGnssAndWriteLogTask",
+  xTaskCreateUniversal(//ここでgnssの値の取得をするタスクを生成
+    getGnssTask,
+    "getGnssTask",
     8192,
     NULL,
-    2,//優先度3で行う
+    2,//優先度2で行う
     NULL,
     1//core1でタスクを処理する
   );
@@ -540,14 +533,14 @@ void setup() {
     NULL,
     1,//優先度1
     NULL,
-    1//core0でタスクを処理する
+    1//core1でタスクを処理する
   );
-  xTaskCreateUniversal(//データをCAT-Mで送信するタスクを生成
+  xTaskCreateUniversal(//データをSDカードに記録するタスクを生成
     writeSDTask,
     "writeSDTask",
     4096,
     NULL,
-    0,//優先度1
+    0,//優先度0
     NULL,
     0//core0でタスクを処理する
   );
@@ -608,7 +601,7 @@ void createFilename(uint16_t year, uint8_t month, uint8_t day, uint8_t hourUTC, 
     snprintf(date, sizeof(date), "%04u-%02u-%02u-%02u-%02u-%02u.csv", year, month, day, hourJST, minute, second);
     filename = date; // ファイル名のポインタを設定
 
-    pcf.init();
+    pcf.init();//rtcに時刻を設定
     pcf.stopClock();
     pcf.setYear(year % 100);
     pcf.setMonth(month);

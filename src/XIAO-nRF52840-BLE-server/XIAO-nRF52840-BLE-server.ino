@@ -58,7 +58,7 @@ void loop() {
   //   updateSubscribedCharacteristics();
   //   delay(100);
   // }
-  static unsigned long previousMillis = 0;
+  static unsigned long previousMillis = 0;//ここは最初の関数呼び出し時に一度だけ 0 に初期化される
   const long interval = 1900; // 2秒
 
   BLE.poll();
