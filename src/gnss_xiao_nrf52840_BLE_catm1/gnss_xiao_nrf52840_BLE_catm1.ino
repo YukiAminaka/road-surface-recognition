@@ -48,8 +48,8 @@ File dataFile;
 #include "BLEUUID.h"
 #include "BLEDevice.h"
 // サーバーとキャラクタリスティックのUUIDを定義
-static BLEUUID serviceUUID("12345678-1234-5678-1234-56789abcdef0");
-static BLEUUID charUUID("abcdef01-1234-5678-1234-56789abcdef0");
+static BLEUUID serviceUUID("6bea6b90-4e02-4407-bb8f-f9a3e95c112b");
+static BLEUUID charUUID("a0a61412-e768-465c-86fa-2e8b0043e262");
 static boolean doConnect = false;
 static boolean connected = false;
 static boolean doScan = false;
