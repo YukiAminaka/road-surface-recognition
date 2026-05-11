@@ -14,8 +14,8 @@ static bool debug_nn = false; // Set this to true to see e.g. features generated
 
 String status = "UNCERTAIN";
 
-BLEService service("e489f0f7-a3ef-40b5-a351-365a3e54c76b");
-BLEStringCharacteristic accelerationCharacteristic("e2bae4ab-9cff-4480-8485-fa206f936302",BLERead | BLENotify,20);
+BLEService service("6bea6b90-4e02-4407-bb8f-f9a3e95c112b");
+BLEStringCharacteristic accelerationCharacteristic("a0a61412-e768-465c-86fa-2e8b0043e262",BLERead | BLENotify,20);
 
 
 void setup() {
@@ -593,7 +593,7 @@ void xiaowand_power_begin() {
 
   xiaowand_event_exec = false;
   xiaowand_attach_press(NULL);
-  xiaowand_attach_release(NULL);The connection to the specified Amazon Redshift cluster failed. Ensure that security settings allow Firehose connections, that the cluster or database specified in the Amazon Redshift destination configuration or JDBC URL is correct, and that the cluster is available.
+  xiaowand_attach_release(NULL);
   xiaowand_attach_startup(NULL);
   xiaowand_attach_shutdown(NULL);
   xiaowand_attach_longpush(NULL);
