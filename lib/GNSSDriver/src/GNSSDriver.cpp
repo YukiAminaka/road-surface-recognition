@@ -1,6 +1,7 @@
 #include "GNSSDriver.h"
 #include <SparkFun_u-blox_GNSS_v3.h>
 #include <HardwareSerial.h>
+#include <SerialLog.h>
 #include <Arduino.h>
 
 static SFE_UBLOX_GNSS_SERIAL gnss_; // シリアル通信でu-blox GNSSモジュールと通信するためのオブジェクト
