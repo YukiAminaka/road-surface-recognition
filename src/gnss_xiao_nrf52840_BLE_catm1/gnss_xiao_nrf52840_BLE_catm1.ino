@@ -167,7 +167,6 @@ void sendDataTask(void *pvParameters)//キューからデータを取り出し�
 bool sendATCommand(const char* command ,int delay_time = 500) {
   mySerial.write(command);
   delay(delay_time);
-  unsigned long startTime = millis();
   String response = "";  // 応答を蓄積するための文字列バッファ
   
   while (mySerial.available()) {
@@ -226,7 +225,14 @@ static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, ui
   std::string receivedData(reinterpret_cast<char*>(pData), length);
   status = receivedData.c_str();
 
+  // 時刻文字列を作成 (ISO8601形式: YYYY-MM-DDTHH:MM:SS)
+  // char timeStr[20];
+  // snprintf(timeStr, sizeof(timeStr), "20%02u-%02u-%02uT%02u:%02u:%02u",
+  //          year, month, day, hour, minute, second);
+
   StaticJsonDocument<96> doc;
+  doc["id"] = data_number++;
+  // doc["time"] = timeStr;
   doc["lat"] = latitude;
   doc["lon"] = longitude;
   doc["alt"] = altitude;
